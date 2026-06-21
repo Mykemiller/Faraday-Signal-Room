@@ -49,9 +49,13 @@ export default async function SignalRoomPage() {
       <header className="mb-8">
         <p className="eyebrow">Faraday Intelligence</p>
         <h1 className="font-serif text-3xl font-semibold">Signal Room</h1>
+        <p className="mt-2 max-w-2xl font-serif italic text-forest">
+          From the grid and the foundry to the capital stack, Faraday follows every Theater, Sector, and Thread of the
+          buildout — Signal by Signal.
+        </p>
         <p className="mt-2 max-w-2xl text-forest/80">
-          Compose your own intelligence subscription. Choose the themes, areas and
-          companies you care about, set a cadence, and receive matching signals.
+          Compose your own intelligence subscription. Choose the Theaters, Sectors, Threads and
+          companies you care about, set a cadence, and receive matching Signals.
         </p>
       </header>
 

@@ -1,8 +1,12 @@
 # Signal Room
 
 Faraday Intelligence's **configurator storefront** — the surface where a subscriber
-composes a personalized intelligence subscription across Theme / Domain / Sub-Domain /
+composes a personalized intelligence subscription across Theater / Sector / Thread /
 Company / Frequency and receives matching **Signals** through delivery rails.
+
+> Public taxonomy labels (Theater / Sector / Thread) are a display layer over the
+> internal dimensions (theme / domain / subdomain) per FAR-177 — backend keys,
+> columns, and API params are unchanged.
 
 Standalone Next.js (App Router) app, mirroring the Jurisdiction Watch repo pattern.
 Built to **Design Specification v1.2** (Senior Engineering Review incorporated).

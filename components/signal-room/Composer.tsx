@@ -101,7 +101,7 @@ export function Composer({
         <PresetGallery taxonomy={taxonomy} onApply={applyPreset} />
 
         <section className="mt-8">
-          <h2 className="font-serif text-xl">Themes</h2>
+          <h2 className="font-serif text-xl">Theaters</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {taxonomy.themes.map((t) => (
               <Chip
@@ -116,7 +116,7 @@ export function Composer({
         </section>
 
         <section className="mt-6">
-          <h2 className="font-serif text-xl">Areas</h2>
+          <h2 className="font-serif text-xl">Sectors</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {taxonomy.domains.map((d) => (
               <Chip
@@ -127,6 +127,12 @@ export function Composer({
                 {d.domain_name}
               </Chip>
             ))}
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <h2 className="font-serif text-xl">Threads</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
             {taxonomy.subdomains.map((s) => (
               <Chip
                 key={s.subdomain_code}
@@ -243,7 +249,7 @@ function Chip({
 
 function buildSummary(rules: DraftRule[], frequency: Frequency, rail: DeliveryRail) {
   if (rules.length === 0) {
-    return "Pick the themes, areas and companies you want to follow.";
+    return "Pick the Theaters, Sectors, Threads and companies you want to follow.";
   }
   const counts = rules.reduce<Record<string, number>>((acc, r) => {
     acc[r.dimension] = (acc[r.dimension] ?? 0) + 1;
@@ -251,9 +257,9 @@ function buildSummary(rules: DraftRule[], frequency: Frequency, rail: DeliveryRa
   }, {});
   const parts: string[] = [];
   const plural = (n: number, s: string) => `${n} ${s}${n === 1 ? "" : "s"}`;
-  if (counts.theme) parts.push(plural(counts.theme, "Theme"));
-  if (counts.domain) parts.push(plural(counts.domain, "Area"));
-  if (counts.subdomain) parts.push(plural(counts.subdomain, "Sub-area"));
+  if (counts.theme) parts.push(plural(counts.theme, "Theater"));
+  if (counts.domain) parts.push(plural(counts.domain, "Sector"));
+  if (counts.subdomain) parts.push(plural(counts.subdomain, "Thread"));
   if (counts.company) parts.push(plural(counts.company, "Company"));
   const cadence = { realtime: "real-time", daily: "daily digest", weekly: "weekly digest", monthly: "monthly digest" }[frequency];
   const railLabel = rail === "email_digest" ? "by email" : "in-app";

@@ -53,7 +53,7 @@ function buildPresets(taxonomy: Taxonomy): Preset[] {
   if (firstThemes.length > 0) {
     presets.push({
       title: "Macro watch",
-      blurb: "A broad daily read across the biggest themes.",
+      blurb: "A broad daily read across the biggest Theaters.",
       rules: firstThemes.map((t) => ({
         key: key(),
         dimension: "theme" as const,
