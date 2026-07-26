@@ -34,3 +34,64 @@ h3 {
   font-size: 0.72rem;
   font-weight: 600;
 }
+
+/* ── Today's Signals ticker (CSS marquee, transform-based, no JS loop) ─────── */
+.dc-ticker {
+  overflow: hidden;
+}
+
+.dc-ticker-track {
+  display: flex;
+  width: max-content;
+  animation-name: dc-ticker-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* Pause while the reader hovers or focuses inside the strip. */
+.dc-ticker:hover .dc-ticker-track,
+.dc-ticker:focus-within .dc-ticker-track {
+  animation-play-state: paused;
+}
+
+.dc-ticker-row {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.dc-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-right: 1px solid rgba(238, 230, 218, 0.14);
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-ticker-item:hover span:nth-child(2) {
+  color: var(--gold);
+}
+
+@keyframes dc-ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Two identical halves; -50% lands exactly at the loop seam. */
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-ticker-track {
+    animation: none;
+    /* Fall back to a manually scrollable strip. */
+    overflow-x: auto;
+  }
+  /* Avoid the doubled content when there is no motion. */
+  .dc-ticker-track > .dc-ticker-row[aria-hidden="true"] {
+    display: none;
+  }
+}

@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Signal Room — Faraday Intelligence",
   description:
-    "Compose your own intelligence subscription across Theaters, Sectors, Threads, companies and cadence.",
+    "Faraday's live Signal feed — every Signal fired across the buildout, filterable by Theater, Sector and Thread.",
 };
 
 export default function RootLayout({
