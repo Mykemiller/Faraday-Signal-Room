@@ -113,6 +113,11 @@ export function logSignalRoomConfig(): void {
   console.error("[signal-room] config", {
     url: url ?? "MISSING", // the project URL is not a secret
     urlHasTrailingSlash: url ? url.endsWith("/") : null,
+    // Found live 2026-08-22: NEXT_PUBLIC_SUPABASE_URL held a LEADING SPACE.
+    // supabase-js `validateSupabaseUrl` trims, so it is not fatal — but it is
+    // a paste defect, and worth an explicit boolean rather than hoping someone
+    // spots the space inside a quoted string.
+    urlHasWhitespace: url ? /\s/.test(url) : null,
     liveFlag: process.env.NEXT_PUBLIC_SIGNAL_ROOM_LIVE ?? "MISSING",
     serviceKeyPresent: Boolean(serviceKey),
     serviceKeyRole: roleClaim(serviceKey),
