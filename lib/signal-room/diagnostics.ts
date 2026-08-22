@@ -46,7 +46,36 @@ export function roleClaim(key?: string): string {
   }
 }
 
-/** base64url → utf-8, working under both the Node and Edge runtimes. */
+/**
+ * Decode the `ref` (project) claim of a Supabase JWT. NOT a secret: the project
+ * ref is the subdomain of NEXT_PUBLIC_SUPABASE_URL and is already public.
+ *
+ * This is what separates the two ways a key can be rejected as invalid. Both
+ * present identically at the gateway as UNAUTHORIZED_INVALID_API_KEY:
+ *   - ref does not match the URL -> the key belongs to a DIFFERENT project
+ *   - ref matches but is still rejected -> the JWT secret was rotated, or the
+ *     value is damaged (truncated/wrapped paste)
+ */
+export function projectRef(key?: string): string | null {
+  if (!key || !key.startsWith("eyJ")) return null;
+  try {
+    const payload = key.split(".")[1];
+    if (!payload) return null;
+    const claims = JSON.parse(decodeBase64Url(payload)) as { ref?: unknown };
+    return typeof claims.ref === "string" ? claims.ref : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The project ref embedded in a Supabase project URL, or null. */
+export function refFromUrl(url?: string): string | null {
+  if (!url) return null;
+  const m = /^https?:\/\/([a-z0-9-]+)\.supabase\.(co|in|red)/i.exec(url.trim());
+  return m ? m[1] : null;
+}
+
+/** base64url \u2192 utf-8, working under both the Node and Edge runtimes. */
 function decodeBase64Url(input: string): string {
   const b64 = input.replace(/-/g, "+").replace(/_/g, "/");
   const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
@@ -78,6 +107,9 @@ export function logSignalRoomConfig(): void {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  const urlRef = refFromUrl(url);
+  const keyRef = projectRef(serviceKey);
+
   console.error("[signal-room] config", {
     url: url ?? "MISSING", // the project URL is not a secret
     urlHasTrailingSlash: url ? url.endsWith("/") : null,
@@ -85,6 +117,15 @@ export function logSignalRoomConfig(): void {
     serviceKeyPresent: Boolean(serviceKey),
     serviceKeyRole: roleClaim(serviceKey),
     serviceKeyLength: serviceKey?.length ?? 0,
+    // Project ref is public (it is the URL subdomain). A mismatch means the key
+    // is for a different project; a match that still 401s means the JWT secret
+    // was rotated or the value is damaged.
+    serviceKeyProjectRef: keyRef,
+    urlProjectRef: urlRef,
+    serviceKeyRefMatchesUrl: keyRef && urlRef ? keyRef === urlRef : null,
+    // A wrapped or truncated paste is a common cause of an invalid key.
+    serviceKeyHasWhitespace: serviceKey ? /\s/.test(serviceKey) : null,
+    serviceKeySegments: serviceKey ? serviceKey.split(".").length : 0,
     anonKeyPresent: Boolean(anonKey),
     anonKeyRole: roleClaim(anonKey),
     anonKeyLength: anonKey?.length ?? 0,
