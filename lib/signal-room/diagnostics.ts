@@ -28,13 +28,22 @@
  * Returns a coarse descriptor, never key material:
  *   - "service_role" — a genuine service-role key (bypasses RLS)
  *   - "anon"         — the legacy anon key (subject to RLS)
- *   - "NOT_A_JWT (publishable/secret format?)" — an `sb_publishable_…` /
- *     `sb_secret_…` key, which is not a JWT and carries no role claim
+ *   - "sb_secret (new-format secret key)" — correct for server use
+ *   - "sb_publishable (WRONG …)" — a browser key; cannot bypass RLS
+ *   - "NOT_A_JWT (unrecognised key format)"
  *   - "MISSING" / "NO_ROLE_CLAIM" / "UNDECODABLE"
  */
 export function roleClaim(key?: string): string {
   if (!key) return "MISSING";
-  if (!key.startsWith("eyJ")) return "NOT_A_JWT (publishable/secret format?)";
+  // This project is on Supabase's new API-keys system (it issues sb_publishable_
+  // / sb_secret_ alongside the legacy JWTs), so name these precisely rather than
+  // lumping them together — sb_secret_ is a CORRECT server-side key and must not
+  // read as a defect, while sb_publishable_ in this slot is a real misconfiguration.
+  if (key.startsWith("sb_secret_")) return "sb_secret (new-format secret key)";
+  if (key.startsWith("sb_publishable_")) {
+    return "sb_publishable (WRONG — browser key, cannot bypass RLS)";
+  }
+  if (!key.startsWith("eyJ")) return "NOT_A_JWT (unrecognised key format)";
   try {
     const payload = key.split(".")[1];
     if (!payload) return "UNDECODABLE";
@@ -97,7 +106,8 @@ let configLogged = false;
  * This is the line that settles the leading hypothesis: a genuine service-role
  * key decodes to "service_role" and bypasses RLS; the anon key decodes to
  * "anon" and is denied by `signals` (RLS, zero policies) and `faraday_domains`
- * (authenticated-only); an `sb_publishable_…` key is not a JWT at all.
+ * (authenticated-only); an `sb_publishable_…` key is a browser key and cannot
+ * bypass RLS at all.
  */
 export function logSignalRoomConfig(): void {
   if (configLogged) return;

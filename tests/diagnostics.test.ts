@@ -27,15 +27,21 @@ describe("roleClaim", () => {
     expect(roleClaim(fakeJwt({ role: "anon", iss: "supabase" }))).toBe("anon");
   });
 
-  it("flags a publishable key as not a JWT", () => {
-    expect(roleClaim("sb_publishable_abcdefghijklmnop")).toBe(
-      "NOT_A_JWT (publishable/secret format?)",
+  it("names a new-format secret key as correct for server use", () => {
+    expect(roleClaim("sb_secret_abcdefghijklmnop")).toBe(
+      "sb_secret (new-format secret key)",
     );
   });
 
-  it("flags a secret key as not a JWT", () => {
-    expect(roleClaim("sb_secret_abcdefghijklmnop")).toBe(
-      "NOT_A_JWT (publishable/secret format?)",
+  it("flags a publishable key in the service-role slot as WRONG", () => {
+    expect(roleClaim("sb_publishable_abcdefghijklmnop")).toBe(
+      "sb_publishable (WRONG \u2014 browser key, cannot bypass RLS)",
+    );
+  });
+
+  it("falls back to NOT_A_JWT for an unrecognised format", () => {
+    expect(roleClaim("totally-unknown-key-format")).toBe(
+      "NOT_A_JWT (unrecognised key format)",
     );
   });
 
