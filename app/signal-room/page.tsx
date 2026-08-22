@@ -1,6 +1,11 @@
 import { unstable_cache } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSignalRoomLive } from "@/lib/signal-room/flags";
+import {
+  logQueryCounts,
+  logQueryError,
+  logSignalRoomConfig,
+} from "@/lib/signal-room/diagnostics";
 import { SignalFeed } from "@/components/signal-room/SignalFeed";
 import {
   buildTaxonomyIndex,
@@ -50,11 +55,17 @@ interface RawFeed {
 // The raw database reads, cached for 5 minutes across requests (Decision 1).
 const getRawFeed = unstable_cache(
   async (): Promise<RawFeed> => {
+    logSignalRoomConfig();
+
     let supabase: ReturnType<typeof createSupabaseAdminClient>;
     try {
       supabase = createSupabaseAdminClient();
-    } catch {
-      // Env not configured (e.g. local/preview without keys).
+    } catch (err) {
+      // Env not configured (e.g. local/preview without keys). Previously this
+      // was swallowed entirely — say which env var is missing (name only).
+      console.error("[signal-room] client construction failed", {
+        message: err instanceof Error ? err.message : String(err),
+      });
       return { error: "not_configured", signals: [], themes: [], domains: [], subdomains: [] };
     }
 
@@ -79,7 +90,29 @@ const getRawFeed = unstable_cache(
         .order("subdomain_code"),
     ]);
 
-    if (signalsRes.error || themesRes.error || domainsRes.error || subdomainsRes.error) {
+    // Log EVERY failing query in full before deciding what the visitor sees.
+    // supabase-js resolves rather than throwing, so this is the only place the
+    // PostgREST message/code/details/hint exist at all.
+    const failures = [
+      logQueryError("signals", "select", signalsRes.error),
+      logQueryError("faraday_themes", "select", themesRes.error),
+      logQueryError("faraday_domains", "select", domainsRes.error),
+      logQueryError("faraday_subdomains", "select", subdomainsRes.error),
+    ].filter(Boolean).length;
+
+    // Counts on success too (Decision 3): an RLS denial is `error: null` with
+    // `data: []`, so silent emptiness is the likelier failure than an exception.
+    logQueryCounts(
+      {
+        signals: signalsRes.data?.length ?? 0,
+        themes: themesRes.data?.length ?? 0,
+        domains: domainsRes.data?.length ?? 0,
+        subdomains: subdomainsRes.data?.length ?? 0,
+      },
+      { failedQueries: failures, cached: false },
+    );
+
+    if (failures > 0) {
       return { error: "query_failed", signals: [], themes: [], domains: [], subdomains: [] };
     }
 
@@ -97,6 +130,18 @@ const getRawFeed = unstable_cache(
 
 async function loadFeed(): Promise<FeedData> {
   const raw = await getRawFeed();
+
+  // Emitted on EVERY render, including cache hits — the counts above only fire
+  // on a cache miss, so without this a stale cached failure would look silent
+  // for up to FEED_TTL_SECONDS.
+  console.error("[signal-room] render", {
+    error: raw.error,
+    signals: raw.signals.length,
+    themes: raw.themes.length,
+    domains: raw.domains.length,
+    subdomains: raw.subdomains.length,
+  });
+
   if (raw.error) return { ...EMPTY, error: raw.error };
 
   const index = buildTaxonomyIndex(raw.themes, raw.domains, raw.subdomains);
