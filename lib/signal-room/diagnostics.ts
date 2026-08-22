@@ -28,13 +28,22 @@
  * Returns a coarse descriptor, never key material:
  *   - "service_role" — a genuine service-role key (bypasses RLS)
  *   - "anon"         — the legacy anon key (subject to RLS)
- *   - "NOT_A_JWT (publishable/secret format?)" — an `sb_publishable_…` /
- *     `sb_secret_…` key, which is not a JWT and carries no role claim
+ *   - "sb_secret (new-format secret key)" — correct for server use
+ *   - "sb_publishable (WRONG …)" — a browser key; cannot bypass RLS
+ *   - "NOT_A_JWT (unrecognised key format)"
  *   - "MISSING" / "NO_ROLE_CLAIM" / "UNDECODABLE"
  */
 export function roleClaim(key?: string): string {
   if (!key) return "MISSING";
-  if (!key.startsWith("eyJ")) return "NOT_A_JWT (publishable/secret format?)";
+  // This project is on Supabase's new API-keys system (it issues sb_publishable_
+  // / sb_secret_ alongside the legacy JWTs), so name these precisely rather than
+  // lumping them together — sb_secret_ is a CORRECT server-side key and must not
+  // read as a defect, while sb_publishable_ in this slot is a real misconfiguration.
+  if (key.startsWith("sb_secret_")) return "sb_secret (new-format secret key)";
+  if (key.startsWith("sb_publishable_")) {
+    return "sb_publishable (WRONG — browser key, cannot bypass RLS)";
+  }
+  if (!key.startsWith("eyJ")) return "NOT_A_JWT (unrecognised key format)";
   try {
     const payload = key.split(".")[1];
     if (!payload) return "UNDECODABLE";
@@ -46,7 +55,36 @@ export function roleClaim(key?: string): string {
   }
 }
 
-/** base64url → utf-8, working under both the Node and Edge runtimes. */
+/**
+ * Decode the `ref` (project) claim of a Supabase JWT. NOT a secret: the project
+ * ref is the subdomain of NEXT_PUBLIC_SUPABASE_URL and is already public.
+ *
+ * This is what separates the two ways a key can be rejected as invalid. Both
+ * present identically at the gateway as UNAUTHORIZED_INVALID_API_KEY:
+ *   - ref does not match the URL -> the key belongs to a DIFFERENT project
+ *   - ref matches but is still rejected -> the JWT secret was rotated, or the
+ *     value is damaged (truncated/wrapped paste)
+ */
+export function projectRef(key?: string): string | null {
+  if (!key || !key.startsWith("eyJ")) return null;
+  try {
+    const payload = key.split(".")[1];
+    if (!payload) return null;
+    const claims = JSON.parse(decodeBase64Url(payload)) as { ref?: unknown };
+    return typeof claims.ref === "string" ? claims.ref : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The project ref embedded in a Supabase project URL, or null. */
+export function refFromUrl(url?: string): string | null {
+  if (!url) return null;
+  const m = /^https?:\/\/([a-z0-9-]+)\.supabase\.(co|in|red)/i.exec(url.trim());
+  return m ? m[1] : null;
+}
+
+/** base64url \u2192 utf-8, working under both the Node and Edge runtimes. */
 function decodeBase64Url(input: string): string {
   const b64 = input.replace(/-/g, "+").replace(/_/g, "/");
   const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
@@ -68,7 +106,8 @@ let configLogged = false;
  * This is the line that settles the leading hypothesis: a genuine service-role
  * key decodes to "service_role" and bypasses RLS; the anon key decodes to
  * "anon" and is denied by `signals` (RLS, zero policies) and `faraday_domains`
- * (authenticated-only); an `sb_publishable_…` key is not a JWT at all.
+ * (authenticated-only); an `sb_publishable_…` key is a browser key and cannot
+ * bypass RLS at all.
  */
 export function logSignalRoomConfig(): void {
   if (configLogged) return;
@@ -78,13 +117,30 @@ export function logSignalRoomConfig(): void {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  const urlRef = refFromUrl(url);
+  const keyRef = projectRef(serviceKey);
+
   console.error("[signal-room] config", {
     url: url ?? "MISSING", // the project URL is not a secret
     urlHasTrailingSlash: url ? url.endsWith("/") : null,
+    // Found live 2026-08-22: NEXT_PUBLIC_SUPABASE_URL held a LEADING SPACE.
+    // supabase-js `validateSupabaseUrl` trims, so it is not fatal — but it is
+    // a paste defect, and worth an explicit boolean rather than hoping someone
+    // spots the space inside a quoted string.
+    urlHasWhitespace: url ? /\s/.test(url) : null,
     liveFlag: process.env.NEXT_PUBLIC_SIGNAL_ROOM_LIVE ?? "MISSING",
     serviceKeyPresent: Boolean(serviceKey),
     serviceKeyRole: roleClaim(serviceKey),
     serviceKeyLength: serviceKey?.length ?? 0,
+    // Project ref is public (it is the URL subdomain). A mismatch means the key
+    // is for a different project; a match that still 401s means the JWT secret
+    // was rotated or the value is damaged.
+    serviceKeyProjectRef: keyRef,
+    urlProjectRef: urlRef,
+    serviceKeyRefMatchesUrl: keyRef && urlRef ? keyRef === urlRef : null,
+    // A wrapped or truncated paste is a common cause of an invalid key.
+    serviceKeyHasWhitespace: serviceKey ? /\s/.test(serviceKey) : null,
+    serviceKeySegments: serviceKey ? serviceKey.split(".").length : 0,
     anonKeyPresent: Boolean(anonKey),
     anonKeyRole: roleClaim(anonKey),
     anonKeyLength: anonKey?.length ?? 0,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roleClaim } from "@/lib/signal-room/diagnostics";
+import { projectRef, refFromUrl, roleClaim } from "@/lib/signal-room/diagnostics";
 
 /**
  * Fabricated, unsigned JWTs built purely to exercise the decoder. No real key
@@ -27,15 +27,21 @@ describe("roleClaim", () => {
     expect(roleClaim(fakeJwt({ role: "anon", iss: "supabase" }))).toBe("anon");
   });
 
-  it("flags a publishable key as not a JWT", () => {
-    expect(roleClaim("sb_publishable_abcdefghijklmnop")).toBe(
-      "NOT_A_JWT (publishable/secret format?)",
+  it("names a new-format secret key as correct for server use", () => {
+    expect(roleClaim("sb_secret_abcdefghijklmnop")).toBe(
+      "sb_secret (new-format secret key)",
     );
   });
 
-  it("flags a secret key as not a JWT", () => {
-    expect(roleClaim("sb_secret_abcdefghijklmnop")).toBe(
-      "NOT_A_JWT (publishable/secret format?)",
+  it("flags a publishable key in the service-role slot as WRONG", () => {
+    expect(roleClaim("sb_publishable_abcdefghijklmnop")).toBe(
+      "sb_publishable (WRONG \u2014 browser key, cannot bypass RLS)",
+    );
+  });
+
+  it("falls back to NOT_A_JWT for an unrecognised format", () => {
+    expect(roleClaim("totally-unknown-key-format")).toBe(
+      "NOT_A_JWT (unrecognised key format)",
     );
   });
 
@@ -59,5 +65,38 @@ describe("roleClaim", () => {
     const token = fakeJwt({ role: "service_role", secretish: "SHOULD-NOT-LEAK" });
     expect(roleClaim(token)).toBe("service_role");
     expect(roleClaim(token)).not.toContain("SHOULD-NOT-LEAK");
+  });
+});
+
+describe("projectRef / refFromUrl", () => {
+  it("reads the ref claim, which names the key's project", () => {
+    expect(
+      projectRef(fakeJwt({ role: "service_role", ref: "ycadmmngkdhvpcsrcuaq" })),
+    ).toBe("ycadmmngkdhvpcsrcuaq");
+  });
+
+  it("returns null for a non-JWT or a JWT without a ref", () => {
+    expect(projectRef("sb_publishable_abc")).toBeNull();
+    expect(projectRef(undefined)).toBeNull();
+    expect(projectRef(fakeJwt({ role: "anon" }))).toBeNull();
+  });
+
+  it("extracts the ref from a project URL", () => {
+    expect(refFromUrl("https://ycadmmngkdhvpcsrcuaq.supabase.co")).toBe(
+      "ycadmmngkdhvpcsrcuaq",
+    );
+    expect(refFromUrl("https://ycadmmngkdhvpcsrcuaq.supabase.co/")).toBe(
+      "ycadmmngkdhvpcsrcuaq",
+    );
+    expect(refFromUrl("  https://abc123.supabase.co  ")).toBe("abc123");
+    expect(refFromUrl("not-a-url")).toBeNull();
+    expect(refFromUrl(undefined)).toBeNull();
+  });
+
+  it("detects a key whose project differs from the URL's", () => {
+    const key = fakeJwt({ role: "service_role", ref: "someotherproject" });
+    expect(projectRef(key)).not.toBe(
+      refFromUrl("https://ycadmmngkdhvpcsrcuaq.supabase.co"),
+    );
   });
 });
