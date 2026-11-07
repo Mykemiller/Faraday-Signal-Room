@@ -1,0 +1,60 @@
+-- =====================================================================
+-- Signal Room — Migration 0007: FSR 1.0 artifact→Signal automation DDL
+-- Linear: FDY-249 (Myke's ruling 2026-11-07: approve pg_trgm + review_status)
+--
+-- DRAFT — NOT APPLIED. No written migration existed for this approval, so
+-- it is proposed here for review instead of as ad-hoc SQL in production.
+-- Apply only after review, via apply_migration('signal_room_0007_fsr_1_0_review_status_trgm').
+--
+-- Pre-flight observed 2026-11-07 (project ycadmmngkdhvpcsrcuaq):
+--   * pg_trgm 1.6 is ALREADY installed (schema public) → step 1 is a no-op.
+--   * public.signals has 3,600 rows and no review_status column.
+--   * No cron is added or enabled by this migration.
+--
+-- All additive and idempotent.
+-- =====================================================================
+
+-- 1. pg_trgm (no-op on production; kept so fresh environments match).
+create extension if not exists pg_trgm with schema public;
+
+-- 2. review_status gate for automated artifact→Signal promotion.
+--    Default 'approved' keeps every existing row and every current reader
+--    (subscriber_signals, digests) unchanged. The FSR 1.0 automation will
+--    insert with review_status = 'pending_review' explicitly.
+alter table public.signals
+  add column if not exists review_status text not null default 'approved';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'signals_review_status_check'
+      and conrelid = 'public.signals'::regclass
+  ) then
+    alter table public.signals
+      add constraint signals_review_status_check
+      check (review_status in ('pending_review','approved','rejected'));
+  end if;
+end $$;
+
+-- Review queue lookup (small partial index: only non-approved rows).
+create index if not exists idx_signals_review_queue
+  on public.signals (fired_at desc)
+  where review_status <> 'approved';
+
+-- 3. Trigram index for near-duplicate detection when the automation
+--    promotes an artifact (fuzzy match on framing before insert).
+create index if not exists idx_signals_framing_trgm
+  on public.signals using gin (framing gin_trgm_ops)
+  where framing is not null;
+
+-- Verification (run after apply):
+--   select review_status, count(*) from public.signals group by 1;  -- expect approved = all rows
+--   select indexname from pg_indexes where tablename='signals'
+--     and indexname in ('idx_signals_review_queue','idx_signals_framing_trgm');
+--
+-- Rollback:
+--   drop index if exists public.idx_signals_framing_trgm;
+--   drop index if exists public.idx_signals_review_queue;
+--   alter table public.signals drop constraint if exists signals_review_status_check;
+--   alter table public.signals drop column if exists review_status;
