@@ -16,25 +16,30 @@ export const dynamic = "force-dynamic";
  * Delivery sweep (P5): reads all active configurations, matches recent Signals
  * against each via OR-union (§4.4, item 4), and routes to email + in-app.
  *
- * Protected by a shared secret (SWEEP_SECRET) — called by a Supabase Edge
- * Function cron or an external scheduler, never from the browser.
+ * Protected by a shared secret (SWEEP_SECRET, sent as x-sweep-secret) — called
+ * by a Supabase Edge Function cron or an external scheduler, never from the
+ * browser. Returns 503 until SWEEP_SECRET is set.
  *
  * Conviction never reaches a subscriber payload (view + serializer, items 3).
  * Digest collapses at >20 matches (item 6).
  */
 export async function POST(req: NextRequest) {
+  // Fail closed. This route runs with the service-role key and sends email, so
+  // an unconfigured deployment must refuse rather than run open. (Previously a
+  // missing SWEEP_SECRET skipped the check entirely.)
   const secret = process.env.SWEEP_SECRET;
-  if (secret) {
-    const auth = req.headers.get("x-sweep-secret");
-    if (auth !== secret) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    }
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // SUPABASE_URL is honoured for back-compat; every other server path in this
+  // app reads NEXT_PUBLIC_SUPABASE_URL, so one variable is enough.
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!secret || !serviceKey || !supabaseUrl) {
+    return NextResponse.json({ error: "sweep_not_configured" }, { status: 503 });
+  }
+  if (req.headers.get("x-sweep-secret") !== secret) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const supabase = createClient(supabaseUrl, serviceKey);
 
   // Fetch recent signals through the conviction-free view only (item 3).
   const { data: recentSignals, error: sigErr } = await supabase
@@ -75,7 +80,7 @@ export async function POST(req: NextRequest) {
     assertNoConviction(serialized); // defense-in-depth guard
 
     const digest = collapseDigest(serialized);
-    const inAppUrl = `${process.env.SIGNAL_ROOM_URL ?? "https://faraday-intelligence.ai"}/signal-room`;
+    const inAppUrl = `${process.env.SIGNAL_ROOM_URL ?? "https://faraday-signal-room.com"}/signal-room`;
 
     const sent: string[] = [];
 
