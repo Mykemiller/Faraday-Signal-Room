@@ -120,8 +120,20 @@ These are intentionally **not** automated and require Myke / FAR sign-off:
 | MVP: subscriber composes a profile | `components/signal-room/Composer.tsx` |
 | MVP: signals route via ≥1 rail | preview/digest path; `delivery_rail` on rules |
 | Gating model (tiers retired; metered; trial on-ramp) | `0003` wallet, `signal_room_settings` |
-| Governance: conviction internal-only | `0004` view + `lib/signal-room/serialize.ts` + tests |
+| Governance: conviction kept out of subscriber deliveries (public feed shows it, see below) | `0004` view + `lib/signal-room/serialize.ts` + tests |
 | Governance: signal content under Myke gate | meter/trial values config-driven, not in code |
+
+## Conviction on the public feed
+
+The public feed at `/signal-room` (`components/signal-room/SignalFeed.tsx` and
+`SignalTicker.tsx`) shows each Signal's conviction tier as a badge. This is
+intentional: Myke decided on 2026-11-11 (FDY-305) to keep conviction public on
+the feed.
+
+Subscriber deliveries are unchanged. The preview and sweep paths still read the
+conviction-free `subscriber_signals` view and pass through
+`lib/signal-room/serialize.ts` and `assertNoConviction`, so digests and previews
+carry no conviction field.
 
 ## Governance flags
 
