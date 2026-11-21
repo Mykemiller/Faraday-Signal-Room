@@ -68,7 +68,7 @@ export default async function SignalRoomPage() {
   const live = isSignalRoomLive();
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-10">
+    <main id="main" className="mx-auto max-w-5xl px-5 py-10">
       {!live && (
         <div className="mb-6 rounded-md border border-gold/40 bg-cream px-4 py-2 text-sm text-forest">
           <span className="eyebrow mr-2">Preview</span>
