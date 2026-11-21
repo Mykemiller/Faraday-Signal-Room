@@ -10,6 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "check:masthead": "node lib/faraday-masthead/check-drift.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
