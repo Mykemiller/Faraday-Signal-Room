@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { FEED_TTL_SECONDS, SIGNAL_LIMIT, getRawFeed } from "@/lib/signal-room/feed-source";
 import { buildHealth } from "@/lib/signal-room/health";
-import { isSignalRoomLive } from "@/lib/signal-room/flags";
+import { signalRoomLive } from "@/lib/signal-room/flags";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function GET() {
   const raw = await getRawFeed();
   const health = buildHealth(raw, {
     nowMs: Date.now(),
-    live: isSignalRoomLive(),
+    live: await signalRoomLive(),
     window: SIGNAL_LIMIT,
   });
 

@@ -1,4 +1,4 @@
-import { isSignalRoomLive } from "@/lib/signal-room/flags";
+import { signalRoomLive } from "@/lib/signal-room/flags";
 import { getRawFeed } from "@/lib/signal-room/feed-source";
 import { SignalFeed } from "@/components/signal-room/SignalFeed";
 import {
@@ -65,7 +65,7 @@ async function loadFeed(): Promise<FeedData> {
 
 export default async function SignalRoomPage() {
   const data = await loadFeed();
-  const live = isSignalRoomLive();
+  const live = await signalRoomLive(); // FDY-297: console value, else NEXT_PUBLIC_SIGNAL_ROOM_LIVE
 
   return (
     <main id="main" className="mx-auto max-w-5xl px-5 py-10">
