@@ -107,7 +107,7 @@ These are intentionally **not** automated and require Myke / FAR sign-off:
 - [ ] Set the **GF-9 trial values** in `signal_room_settings` (allowance + length).
 - [ ] Re-point the Faraday home-page tile (engine repo) from the `/signal-room` stub to
       this app; retire the stub only after the live route verifies.
-- [ ] Flip `NEXT_PUBLIC_SIGNAL_ROOM_LIVE=true` once FAR-44 / FAR-46 / FAR-16 gates pass.
+- [ ] Flip the live flag once FAR-44 / FAR-46 / FAR-16 gates pass: set `signal_room_live` = true for app **SR** in the Workbench console (FDY-297; takes effect within 60 s, no redeploy). `NEXT_PUBLIC_SIGNAL_ROOM_LIVE` stays the fail-closed fallback.
 - [ ] Merge the PR to `main` via the GitHub web UI.
 
 ## FAR-31 acceptance-criteria traceability
