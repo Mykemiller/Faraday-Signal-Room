@@ -1,6 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { MAX_RULES_PER_CONFIGURATION } from "@/lib/signal-room/types";
+import {
+  VISITOR_COOKIE,
+  VISITOR_COOKIE_OPTIONS,
+  consumeRuleWrites,
+  resolvePersonId,
+  usageIdentity,
+  type UsageIdentity,
+} from "@/lib/usage/limits";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +32,32 @@ async function getSubscriber() {
     data: { user },
   } = await supabase.auth.getUser();
   return { supabase, user };
+}
+
+// Daily signal settings limit (FDY-394): who is counting, server-side only.
+async function usageIdentityFor(
+  req: NextRequest,
+  user: { id: string; email?: string | null; email_confirmed_at?: string | null },
+): Promise<UsageIdentity> {
+  let personId: string | null = null;
+  try {
+    personId = await resolvePersonId(createSupabaseAdminClient(), user);
+  } catch {
+    // No service client: consume() fails closed on its own.
+  }
+  return usageIdentity({
+    personId,
+    visitorCookie: req.cookies.get(VISITOR_COOKIE)?.value,
+    headers: req.headers,
+    salt: process.env.USAGE_IP_SALT || undefined,
+  });
+}
+
+function withVisitorCookie(res: NextResponse, identity: UsageIdentity) {
+  if (identity.newVisitorId) {
+    res.cookies.set(VISITOR_COOKIE, identity.newVisitorId, VISITOR_COOKIE_OPTIONS);
+  }
+  return res;
 }
 
 // GET /api/signal-room/configurations — list the caller's configurations + rules.
@@ -57,6 +93,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Daily signal settings limit (FDY-394, D3): each new rule is a distinct
+  // item. Ids are minted here, before any write, so the consumed item key is
+  // the rule's real id. Over the limit (or if the check fails): 429 and
+  // nothing is written. The copy is rendered client-side in local time.
+  const ruleIds = rules.map(() => randomUUID());
+  const identity = await usageIdentityFor(req, user);
+  const gate = await consumeRuleWrites(ruleIds, identity);
+  if (!gate.allowed) {
+    return withVisitorCookie(
+      NextResponse.json({ error: "daily_limit", reset_at: gate.resetAt }, { status: 429 }),
+      identity,
+    );
+  }
+
   // Create the parent configuration (RLS sets/enforces ownership).
   const { data: config, error: configError } = await supabase
     .from("signal_configurations")
@@ -65,14 +115,15 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (configError || !config) {
-    return NextResponse.json(
-      { error: configError?.message ?? "create_failed" },
-      { status: 500 },
+    return withVisitorCookie(
+      NextResponse.json({ error: configError?.message ?? "create_failed" }, { status: 500 }),
+      identity,
     );
   }
 
   if (rules.length > 0) {
     const rows = rules.map((r, i) => ({
+      id: ruleIds[i],
       configuration_id: config.id,
       dimension: r.dimension,
       theme_code: r.theme_code ?? null,
@@ -92,14 +143,22 @@ export async function POST(req: NextRequest) {
     if (rulesError) {
       // Roll back the orphaned parent so a failed rule insert leaves no trace.
       await supabase.from("signal_configurations").delete().eq("id", config.id);
-      return NextResponse.json({ error: rulesError.message }, { status: 400 });
+      return withVisitorCookie(
+        NextResponse.json({ error: rulesError.message }, { status: 400 }),
+        identity,
+      );
     }
   }
 
-  return NextResponse.json({ id: config.id, status: "inactive" }, { status: 201 });
+  return withVisitorCookie(
+    NextResponse.json({ id: config.id, status: "inactive" }, { status: 201 }),
+    identity,
+  );
 }
 
 // PATCH /api/signal-room/configurations — pause / resume / cancel (free, §7.2).
+// Never counts toward the daily signal settings limit (FDY-394): it changes
+// the configuration's status only, no rule content.
 export async function PATCH(req: NextRequest) {
   const { supabase, user } = await getSubscriber();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

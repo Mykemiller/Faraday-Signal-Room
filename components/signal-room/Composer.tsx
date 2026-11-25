@@ -10,6 +10,7 @@ import {
 } from "./types";
 import { PresetGallery } from "./PresetGallery";
 import { Preview } from "./Preview";
+import { UsageNotice } from "./UsageNotice";
 
 const MAX_RULES = 30; // mirrors the DB cap (review item 6, §10)
 
@@ -28,6 +29,7 @@ export function Composer({
   const [rail, setRail] = useState<DeliveryRail>("email_digest");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [limitResetAt, setLimitResetAt] = useState<string | null>(null);
 
   function addRule(
     dimension: DraftRule["dimension"],
@@ -54,12 +56,19 @@ export function Composer({
   async function saveAndActivate() {
     setBusy(true);
     setMessage(null);
+    setLimitResetAt(null);
     try {
       const createRes = await fetch("/api/signal-room/configurations", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ rules: rules.map(toApiRule) }),
       });
+      if (createRes.status === 429) {
+        // Daily signal settings limit (FDY-394): friendly notice, local time.
+        const err = await createRes.json().catch(() => ({}));
+        setLimitResetAt(typeof err.reset_at === "string" ? err.reset_at : "");
+        return;
+      }
       if (!createRes.ok) {
         const err = await createRes.json().catch(() => ({}));
         setMessage(err.error === "unauthorized" ? "Please sign in to activate." : `Could not save configuration (${err.error ?? createRes.status}).`);
@@ -217,6 +226,7 @@ export function Composer({
           </button>
 
           {message && <p className="mt-3 text-sm text-forest/80">{message}</p>}
+          {limitResetAt !== null && <UsageNotice resetAt={limitResetAt || null} />}
         </div>
 
         <div className="mt-4">
